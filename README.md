@@ -15,7 +15,7 @@ Walrus has:
 ```bash
 git clone https://github.com/barisozmen/walrus.git && cd walrus
 bundle install
-bin/walrus compile --run hello_world.wl
+bin/walrus compile --run draw_julia_set.wl
 ```
 
 ### Syntax
@@ -25,10 +25,10 @@ func celsius_to_fahrenheit(c int) int {
 }
 
 var temp = 25;
-print celsius_to_fahrenheit(temp);  // 77°F
+print celsius_to_fahrenheit(temp);
 ```
 
-You can understand great deal just by reading [compiler_passes/01_tokenizer.rb](compiler_passes/01_tokenizer.rb) and [compiler_passes/02_parser.rb](compiler_passes/02_parser.rb). Both files are fairly short and descriptive. They are the source of truth.
+You can understand great deal of the language syntax just by reading [compiler_passes/01_tokenizer.rb](compiler_passes/01_tokenizer.rb) and [compiler_passes/02_parser.rb](compiler_passes/02_parser.rb). Both files are fairly short and descriptive. They are the source of truth.
 
 For a quicker overview:
 - Types: `int`, `float`, `char`, `str`
