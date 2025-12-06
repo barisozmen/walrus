@@ -1,0 +1,39 @@
+// sqrt.wl
+//
+// calculate square roots
+
+func fabs(x float) float {
+    if x < 0.0 {
+        return -x;
+    } else {
+        return x;
+    }
+}
+
+func sqrt(x float) float {
+    var guess = 1.0;
+    var nextguess = 0.0;
+    if x == 0.0 {
+        return 0.0;
+    }
+    while guess != 0.0 {
+        nextguess = (guess + (x / guess)) / 2.0;
+	if (fabs(nextguess-guess)/guess) < 0.000001 {
+            return guess;
+        }
+	guess = nextguess;
+    }
+}
+
+var LAST = sqrt(100.0);   // Should work. 
+
+func run() int {
+    var n = 0.0;
+    while n < LAST {
+        print sqrt(n);
+        n = n + 1.0;
+    }
+    return 0;
+}
+
+run();

@@ -1,0 +1,29 @@
+<html>
+<body>
+
+  <h3>Program Output</h3>
+
+<pre id="Walrusout">
+</pre>
+
+  <script>
+    var imports = {
+        env: { 
+            _print_int: (x) => { document.getElementById("Walrusout").innerHTML += x + "\n"; },
+            _print_float: (x) => { document.getElementById("Walrusout").innerHTML += x + "\n"; },
+            _print_char: (x) => { document.getElementById("Walrusout").innerHTML += String.fromCharCode(x); },	    
+          },
+      };
+    fetch("out.wasm").then(response =>
+      response.arrayBuffer()
+    ).then(bytes =>
+           WebAssembly.instantiate(bytes, imports)
+    ).then(results => {
+      window.Walrus = results;
+      window.main = results.instance.exports.main;
+      window.main()
+    });
+  </script>
+
+</body>
+</html>
