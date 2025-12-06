@@ -72,8 +72,3 @@ Followings are what we need:
 - string addition during runtime (LLVM level)
 - type castings during runtime (LLVM level)
 - testing & bug fixing
-
-   
-
-  
-                                          n = 
