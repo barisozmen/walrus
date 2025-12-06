@@ -19,8 +19,20 @@ bin/walrus compile --run draw_julia_set.wl
 ```
 
 ### Syntax
+You can understand great deal of the language syntax just by reading [compiler_passes/01_tokenizer.rb](compiler_passes/01_tokenizer.rb) and [compiler_passes/02_parser.rb](compiler_passes/02_parser.rb). Both files are descriptive and fairly short. They are the source of truth.
+
+For a quicker overview:
+- Types: `int`, `float`, `char`, `str`
+- Control expressions: `if`, `elsif`, `else`, `while`, `for`, `case`
+- Operators: `+`, `-`, `*`, `/`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `and`, `or`
+- Functions: `func`, `return`, `break`, `continue`
+- Local and global variables: `var`
+- Comments: `//`
+
+Example program:
 ```c
 // 3-band heat fractal
+
 var band1 = 0.5;
 var band2 = 2.0;
 
@@ -39,15 +51,7 @@ for (var y = -1.0; y <= 1.0; y = y + 0.1) {
 }
 ```
 
-You can understand great deal of the language syntax just by reading [compiler_passes/01_tokenizer.rb](compiler_passes/01_tokenizer.rb) and [compiler_passes/02_parser.rb](compiler_passes/02_parser.rb). Both files are fairly short and descriptive. They are the source of truth.
-
-For a quicker overview:
-- Types: `int`, `float`, `char`, `str`
-- Control expressions: `if`, `elsif`, `else`, `while`, `for`, `case`
-- Operators: `+`, `-`, `*`, `/`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `and`, `or`
-- Functions: `func`, `return`, `break`, `continue`
-- Local and global variables: `var`
-- Comments: `//`
+See [tests/fixtures/](tests/fixtures/) for more examples
 
 ### Performance characteristics
 - Slow compilation (written in Ruby)
@@ -68,3 +72,8 @@ Followings are what we need:
 - string addition during runtime (LLVM level)
 - type castings during runtime (LLVM level)
 - testing & bug fixing
+
+   
+
+  
+                                          n = 
