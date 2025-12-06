@@ -10,11 +10,11 @@ Toy programming language with rich error messages and easy to understand compile
 - Static typing
 
 ### Performance characteristics
-Slow compilation (written in Ruby)
-Fast execution (targets [LLVM](https://llvm.org/), direct to machine)
+- Slow compilation (written in Ruby)
+- Fast execution (targets [LLVM](https://llvm.org/), direct to machine)
 
 ### Compilation Steps
-see compiler_passes/
+You can get a clear picture from [compiler_passes/](compiler_passes/)
 
 ### Getting Started
 ```bash
