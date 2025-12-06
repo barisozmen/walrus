@@ -20,12 +20,23 @@ bin/walrus compile --run draw_julia_set.wl
 
 ### Syntax
 ```c
-func celsius_to_fahrenheit(c int) int {
-    return (c * 9) / 5 + 32;
+// 3-band heat fractal
+var band1 = 0.5;
+var band2 = 2.0;
+
+func heat(x float, y float) char {
+    var v = (x*x) + (y*y);
+    if v < band1 { return 'o'; }
+    if v < band2 { return '*'; }
+    return '#';
 }
 
-var temp = 25;
-print celsius_to_fahrenheit(temp);
+for (var y = -1.0; y <= 1.0; y = y + 0.1) {
+    for (var x = -3.0; x <= 3.0; x = x + 0.15) {
+        print heat(x, y);
+    }
+    print '\n';
+}
 ```
 
 You can understand great deal of the language syntax just by reading [compiler_passes/01_tokenizer.rb](compiler_passes/01_tokenizer.rb) and [compiler_passes/02_parser.rb](compiler_passes/02_parser.rb). Both files are fairly short and descriptive. They are the source of truth.
