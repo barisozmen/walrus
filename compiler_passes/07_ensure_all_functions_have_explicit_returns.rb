@@ -39,10 +39,10 @@ module Walrus
                           IntegerLiteral.new(0).tap { |n| n.type = 'int' }
                         when 'float'
                           FloatLiteral.new(0.0).tap { |n| n.type = 'float' }
-                        # when 'bool'
-                        #   BooleanLiteral.new(false)
-                        # when 'char'
-                        #   CharacterLiteral.new(' ')
+                        when 'char'
+                          CharacterLiteral.new(' ')
+                        when 'str'
+                          StringLiteral.new('')
                         else
                           raise "Unknown return type: #{func.type}"
                         end
