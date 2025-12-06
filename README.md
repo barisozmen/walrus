@@ -19,6 +19,15 @@ bin/walrus compile --run hello_world.wl
 ```
 
 ### Syntax
+```c
+func celsius_to_fahrenheit(c int) int {
+    return (c * 9) / 5 + 32;
+}
+
+var temp = 25;
+print celsius_to_fahrenheit(temp);  // 77°F
+```
+
 You can understand great deal just by reading [compiler_passes/01_tokenizer.rb](compiler_passes/01_tokenizer.rb) and [compiler_passes/02_parser.rb](compiler_passes/02_parser.rb). Both files are fairly short and descriptive. They are the source of truth.
 
 For a quicker overview:
@@ -45,3 +54,6 @@ Followings are what we need:
 - Standard library
 - Classes with polymorphism and behavior mixins
 - Built-in debugger
+- string addition during runtime (LLVM level)
+- type castings during runtime (LLVM level)
+- testing & bug fixing
