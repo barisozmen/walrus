@@ -58,7 +58,7 @@ See [tests/fixtures/](tests/fixtures/) for more examples
 - Fast execution (targets [LLVM](https://llvm.org/), direct to machine)
 
 ### Compilation Steps
-You can get a clear picture from [compiler_passes/](compiler_passes/)
+You can get a clear picture from [compiler_passes/](compiler_passes/). Each step is numbered and their code should be easy to read. Also find unit tests for each compilation step in [tests/unit/](tests/unit/), they clearly show what goes in and what goes out at each stage.
 
 ### Contributing & What is missing
 If you'd like to contribute, please make a PR with merge request, or just reach me out at [x.com/barisozmen_twi](https://x.com/barisozmen_twi) to talk about your ideas.
