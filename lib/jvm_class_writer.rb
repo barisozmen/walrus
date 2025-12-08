@@ -61,7 +61,11 @@ module Walrus
       class_file = File.join(temp_dir, "#{class_name}.class")
       bytes = File.binread(class_file)
 
-      # Clean up
+      # Save Java source for debugging (in /tmp)
+      debug_java_file = "/tmp/#{class_name}.java"
+      FileUtils.cp(java_file, debug_java_file)
+
+      # Clean up temp dir
       FileUtils.rm_rf(temp_dir)
 
       bytes
@@ -186,10 +190,23 @@ module Walrus
         # Static fields
         when :getstatic
           field_ref = instr.operands[0]  # "ClassName.fieldName"
-          java_code += "        stack.push(#{field_ref});\n"
+          # Special case for System.out
+          if field_ref == 'java/lang/System.out'
+            java_code += "        stack.push(System.out);\n"
+          else
+            java_code += "        stack.push(#{field_ref});\n"
+          end
         when :putstatic
           field_ref = instr.operands[0]
           java_code += "        #{field_ref} = (#{get_field_type(instr.operands[1])})stack.pop();\n"
+
+        # Stack manipulation
+        when :swap
+          java_code += "        { Object temp1 = stack.pop(); Object temp2 = stack.pop(); stack.push(temp1); stack.push(temp2); }\n"
+        when :dup
+          java_code += "        { Object temp = stack.peek(); stack.push(temp); }\n"
+        when :pop
+          java_code += "        stack.pop();\n"
 
         # Method calls
         when :invokestatic
@@ -256,14 +273,45 @@ module Walrus
 
     def generate_invoke_static(method_ref, descriptor)
       # Parse method ref: "ClassName.methodName"
-      # For now, simplified handling
-      "        // invokestatic #{method_ref}#{descriptor}\n"
+      # descriptor is like "(II)I" meaning (int, int) -> int
+      parts = method_ref.split('.')
+      class_name = parts[0..-2].join('.')
+      method_name = parts[-1]
+
+      # Parse descriptor to get parameter count and return type
+      descriptor =~ /\(([^)]*)\)(.+)/
+      params_desc = $1
+      return_desc = $2
+
+      # Count parameters
+      param_count = count_params(params_desc)
+
+      # Pop parameters from stack
+      if param_count > 0
+        args = (0...param_count).map { |i| "stack.pop()" }.reverse.join(', ')
+        call = "#{method_ref}(#{args})"
+      else
+        call = "#{method_ref}()"
+      end
+
+      # Generate call with return value handling
+      if return_desc == 'V'
+        # Void return
+        "        #{call};\n"
+      else
+        # Push return value onto stack
+        "        stack.push(#{call});\n"
+      end
     end
 
     def generate_invoke_virtual(method_ref, descriptor)
       # Special case for System.out.println
       if method_ref == "java/io/PrintStream.println"
-        return "        System.out.println(stack.pop());\n"
+        # Pop the argument (int, double, etc.)
+        # Pop the PrintStream object
+        arg = "stack.pop()"
+        obj = "stack.pop()"
+        return "        { Object arg = #{arg}; Object obj = #{obj}; System.out.println(arg); }\n"
       end
       "        // invokevirtual #{method_ref}#{descriptor}\n"
     end
@@ -323,6 +371,10 @@ module Walrus
         i += 1
       end
       types
+    end
+
+    def count_params(params_desc)
+      parse_param_descriptors(params_desc).length
     end
   end
 end

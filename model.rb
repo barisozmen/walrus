@@ -5,6 +5,7 @@
 # using advanced Ruby metaprogramming techniques.
 require 'singleton'
 require_relative 'lib/type_mapper'
+require_relative 'lib/jvm_type_mapper'
 require_relative 'compile/context'
 
 # Source location for error reporting
@@ -396,8 +397,10 @@ class PUSH < INSTRUCTION
   end
 
   def get_jvm_bytecode(builder, stack, type_map, context)
-    require_relative 'lib/jvm_type_mapper'
-    case type
+    # Infer type if not set (same as LLVM backend)
+    inferred_type = type || (value.to_s.include?('.') ? 'float' : 'int')
+
+    case inferred_type
     when 'int'
       builder.push_int(value.to_i)
     when 'float'
@@ -412,7 +415,7 @@ class PUSH < INSTRUCTION
 
     temp = "const_#{value}"
     stack.push(temp)
-    type_map[temp] = JVMTypeMapper.to_jvm(type)
+    type_map[temp] = JVMTypeMapper.to_jvm(inferred_type)
   end
 end
 
@@ -458,7 +461,6 @@ class ARITHMETIC_INSTRUCTION < BINARY_INSTRUCTION
   end
 
   def get_jvm_bytecode(builder, stack, type_map, context)
-    require_relative 'lib/jvm_type_mapper'
     right = stack.pop
     left = stack.pop
     type = type_map[left] || 'I'
@@ -516,7 +518,6 @@ class COMPARISON_INSTRUCTION < BINARY_INSTRUCTION
   end
 
   def get_jvm_bytecode(builder, stack, type_map, context)
-    require_relative 'lib/jvm_type_mapper'
     right = stack.pop
     left = stack.pop
     type = type_map[left] || 'I'
@@ -651,7 +652,6 @@ class NEG < UNARY_INSTRUCTION
   end
 
   def get_jvm_bytecode(builder, stack, type_map, context)
-    require_relative 'lib/jvm_type_mapper'
     operand = stack.pop
     type = type_map[operand] || 'I'
 
@@ -709,7 +709,6 @@ class LOAD_GLOBAL < LOAD_INSTRUCTION
   self.llvm_memory_sig = '@'
 
   def get_jvm_bytecode(builder, stack, type_map, context)
-    require_relative 'lib/jvm_type_mapper'
     jvm_type = JVMTypeMapper.to_jvm(type)
     class_name = context[:class_name] || 'WalrusProgram'
     builder.getstatic(class_name, name, jvm_type)
@@ -725,7 +724,6 @@ class LOAD_LOCAL < LOAD_INSTRUCTION
   self.llvm_memory_sig = '%'
 
   def get_jvm_bytecode(builder, stack, type_map, context)
-    require_relative 'lib/jvm_type_mapper'
     local_var_map = context[:local_var_maps][context[:current_function]] || {}
     var_index = local_var_map[name]
     raise "Unknown local variable: #{name}" unless var_index
@@ -757,7 +755,6 @@ class STORE_GLOBAL < STORE_INSTRUCTION
   self.llvm_memory_sig = '@'
 
   def get_jvm_bytecode(builder, stack, type_map, context)
-    require_relative 'lib/jvm_type_mapper'
     value = stack.pop
     jvm_type = type_map[value] || 'I'
     class_name = context[:class_name] || 'WalrusProgram'
@@ -770,7 +767,6 @@ class STORE_LOCAL < STORE_INSTRUCTION
   self.llvm_memory_sig = '%'
 
   def get_jvm_bytecode(builder, stack, type_map, context)
-    require_relative 'lib/jvm_type_mapper'
     value = stack.pop
     local_var_map = context[:local_var_maps][context[:current_function]] || {}
     var_index = local_var_map[name]
@@ -812,20 +808,22 @@ class CALL < INSTRUCTION
   end
 
   def get_jvm_bytecode(builder, stack, type_map, context)
-    require_relative 'lib/jvm_type_mapper'
-    # Args are already on stack in correct order
-    # Note: param_types should be set during type inference
-    arg_types = (param_types || []).map { |t| JVMTypeMapper.to_jvm(t) }
+
+    # Pop args and get their types from type_map (same as LLVM approach)
+    args = stack.pop(nargs).reverse
+
+    # Get actual JVM types from the type_map (infer from stack, not param_types)
+    jvm_param_types = args.map { |val| type_map[val] || 'I' }
     ret_type = JVMTypeMapper.to_jvm(type)
 
-    descriptor = "(#{arg_types.join})#{ret_type}"
+    # Build method descriptor
+    descriptor = "(#{jvm_param_types.join})#{ret_type}"
     class_name = context[:class_name] || 'WalrusProgram'
 
-    # Pop args to track types (they're already on JVM stack)
-    nargs.times { stack.pop }
-
+    # Emit invokestatic instruction
     builder.invokestatic(class_name, name, descriptor)
 
+    # Push return value onto stack
     temp = "call_#{name}"
     stack.push(temp)
     type_map[temp] = ret_type

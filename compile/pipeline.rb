@@ -133,7 +133,11 @@ module Walrus
 
     def compile_jvm(class_bytes, output)
       # Write .class file
-      class_file = output.sub(/\.(exe|out)$/, '') + '.class'
+      # Java requires the file name to match the class name
+      class_name = Walrus.context[:class_name] || 'WalrusProgram'
+      output_dir = File.dirname(output)
+      class_file = File.join(output_dir, "#{class_name}.class")
+
       File.binwrite(class_file, class_bytes)
       ui.file_info("JVM Class", class_file)
 
@@ -142,7 +146,8 @@ module Walrus
     end
 
     def write_java_launcher(class_file, output)
-      class_name = File.basename(class_file, '.class')
+      # All Walrus programs compile to WalrusProgram class
+      class_name = Walrus.context[:class_name] || 'WalrusProgram'
       class_dir = File.dirname(class_file)
 
       launcher = <<~BASH

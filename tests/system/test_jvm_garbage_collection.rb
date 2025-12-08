@@ -46,7 +46,8 @@ class TestJVMGarbageCollection < Minitest::Test
 
   def create_silent_ui
     require_relative '../../lib/ui/ui'
-    Walrus::UI.new(verbose: false)
+    require 'stringio'
+    Walrus::UI.new(out: StringIO.new, err: StringIO.new)
   end
 
   # Test 1: Verify JVM's automatic local variable management
