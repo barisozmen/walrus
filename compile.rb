@@ -36,7 +36,7 @@ module Walrus
 
     desc 'compile INPUT', 'Compile a Walrus source file'
     long_desc <<~DESC
-      Compile a Walrus source file to a native executable.
+      Compile a Walrus source file to a native executable or WebAssembly.
 
       Examples:
         $ wab compile input.wab
@@ -46,8 +46,13 @@ module Walrus
         $ wab compile input.wab -r           # Compile and run immediately
         $ wab compile input.wab -O 2         # Optimize for performance
         $ wab compile input.wab --optimize s # Optimize for size
+        $ wab compile input.wab --target wasm-gc  # Compile to WebAssembly with GC
 
-      Optimization levels:
+      Targets:
+        llvm: LLVM IR → native executable (default)
+        wasm-gc: WebAssembly with Garbage Collection (WAT format)
+
+      Optimization levels (LLVM target only):
         -O0: No optimization (default, fastest compilation, best debugging)
         -O1: Basic optimizations
         -O2: Recommended for most cases (moderate optimizations)
@@ -57,7 +62,8 @@ module Walrus
         -Oz: Aggressive size optimization
         -Og: Good for debugging while optimizing
 
-      Note: Both executable (.exe) and LLVM IR (.ll) files are always generated.
+      Note: For LLVM target, both executable (.exe) and LLVM IR (.ll) files are generated.
+      For wasm-gc target, a .wat file is generated (and .wasm if wat2wasm is available).
     DESC
 
     option :output,
@@ -68,6 +74,12 @@ module Walrus
     option :runtime,
            type: :string,
            desc: 'Path to runtime.c (default: Walrus/misc/runtime.c)'
+
+    option :target,
+           aliases: '-t',
+           type: :string,
+           default: 'llvm',
+           desc: 'Compilation target: llvm (default), wasm-gc'
 
     option :optimize,
            aliases: '-O',
@@ -116,15 +128,26 @@ module Walrus
           source: source,
           output: output,
           runtime: runtime,
-          optimize: options[:optimize]
+          optimize: options[:optimize],
+          target: options[:target]
         )
 
         if options[:run]
-          ui.success("Running ./#{result}")
-          puts "" # Add blank line for separation
-          system("./#{result}")
+          if options[:target] == 'wasm-gc'
+            ui.success("Running with node...")
+            puts "" # Add blank line for separation
+            system("node #{File.join(File.dirname(__FILE__), 'misc/wasm_loader.js')} #{result}")
+          else
+            ui.success("Running ./#{result}")
+            puts "" # Add blank line for separation
+            system("./#{result}")
+          end
         else
-          ui.success("Run with: ./#{result}")
+          if options[:target] == 'wasm-gc'
+            ui.success("Run with: node misc/wasm_loader.js #{result}")
+          else
+            ui.success("Run with: ./#{result}")
+          end
         end
       rescue StandardError
         ui.error("Compilation failed")
@@ -139,10 +162,34 @@ module Walrus
     end
 
     desc 'passes', 'List all compiler passes'
+    option :target,
+           aliases: '-t',
+           type: :string,
+           default: 'llvm',
+           desc: 'Show passes for target: llvm (default), wasm-gc'
     def passes
-      ui.header("Walrus Compiler Passes")
-      CompilerPipeline::PASSES.each.with_index(1) do |pass_class, idx|
+      target = options[:target]
+      target_info = CompilerPipeline::TARGETS[target]
+      unless target_info
+        ui.error("Unknown target: #{target}. Available: #{CompilerPipeline::TARGETS.keys.join(', ')}")
+        exit 1
+      end
+
+      all_passes = CompilerPipeline::SHARED_PASSES + target_info[:passes]
+
+      ui.header("Walrus Compiler Passes (#{target})")
+      ui.info("Target: #{target_info[:description]}")
+      puts
+      all_passes.each.with_index(1) do |pass_class, idx|
         ui.info("#{idx}. #{PassHelpers.display_name(pass_class)}")
+      end
+    end
+
+    desc 'targets', 'List available compilation targets'
+    def targets
+      ui.header("Walrus Compilation Targets")
+      CompilerPipeline::TARGETS.each do |name, info|
+        ui.info("#{name}: #{info[:description]}")
       end
     end
 
