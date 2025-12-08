@@ -82,10 +82,23 @@ module Walrus
            default: false,
            desc: 'Run the executable after compilation'
 
+    option :target,
+           aliases: '-t',
+           type: :string,
+           default: 'llvm',
+           desc: 'Compilation target: llvm or jvm (default: llvm)'
+
     def compile(input)
       # Validate input
       unless File.exist?(input)
         ui.error("Input file not found: #{input}")
+        exit 1
+      end
+
+      # Validate target
+      target = options[:target]
+      unless %w[llvm jvm].include?(target)
+        ui.error("Invalid target: #{target}. Must be 'llvm' or 'jvm'")
         exit 1
       end
 
@@ -96,9 +109,12 @@ module Walrus
       # Ensure sandbox directory exists
       FileUtils.mkdir_p('sandbox')
 
-      unless File.exist?(runtime)
-        ui.error("Runtime not found: #{runtime}")
-        exit 1
+      # Only check runtime for LLVM target
+      if target == 'llvm'
+        unless File.exist?(runtime)
+          ui.error("Runtime not found: #{runtime}")
+          exit 1
+        end
       end
 
       # Read source
@@ -116,7 +132,8 @@ module Walrus
           source: source,
           output: output,
           runtime: runtime,
-          optimize: options[:optimize]
+          optimize: options[:optimize],
+          target: target
         )
 
         if options[:run]
