@@ -394,6 +394,26 @@ class PUSH < INSTRUCTION
       nil  # No instruction to emit
     end
   end
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    require_relative 'lib/jvm_type_mapper'
+    case type
+    when 'int'
+      builder.push_int(value.to_i)
+    when 'float'
+      builder.push_double(value.to_f)
+    when 'bool'
+      builder.push_int(value ? 1 : 0)
+    when 'char'
+      builder.push_int(value.ord)
+    when 'str'
+      builder.push_string(value.to_s)
+    end
+
+    temp = "const_#{value}"
+    stack.push(temp)
+    type_map[temp] = JVMTypeMapper.to_jvm(type)
+  end
 end
 
 class BINARY_INSTRUCTION < INSTRUCTION;
@@ -436,6 +456,35 @@ class ARITHMETIC_INSTRUCTION < BINARY_INSTRUCTION
     stack.push target_reg
     LLVM.new "#{target_reg} = #{llvm_op} #{llvm_type} #{left_reg}, #{right_reg}"
   end
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    require_relative 'lib/jvm_type_mapper'
+    right = stack.pop
+    left = stack.pop
+    type = type_map[left] || 'I'
+
+    if type == 'D'
+      # Double arithmetic
+      case self.class.name
+      when 'ADD' then builder.dadd
+      when 'SUB' then builder.dsub
+      when 'MUL' then builder.dmul
+      when 'DIV' then builder.ddiv
+      end
+    else
+      # Integer arithmetic
+      case self.class.name
+      when 'ADD' then builder.iadd
+      when 'SUB' then builder.isub
+      when 'MUL' then builder.imul
+      when 'DIV' then builder.idiv
+      end
+    end
+
+    temp = "temp_#{self.class.name.downcase}"
+    stack.push(temp)
+    type_map[temp] = type
+  end
 end
 
 class ADD < ARITHMETIC_INSTRUCTION
@@ -464,6 +513,57 @@ class COMPARISON_INSTRUCTION < BINARY_INSTRUCTION
     type_map[target_reg] = 'i1'  # Comparisons always return bool
     stack.push target_reg
     LLVM.new "#{target_reg} = #{llvm_op} #{llvm_type} #{left_reg}, #{right_reg}"
+  end
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    require_relative 'lib/jvm_type_mapper'
+    right = stack.pop
+    left = stack.pop
+    type = type_map[left] || 'I'
+
+    # JVM comparisons: result is 1 (true) or 0 (false) pushed on stack
+    true_label = builder.gen_label('CMP_TRUE')
+    false_label = builder.gen_label('CMP_FALSE')
+    end_label = builder.gen_label('CMP_END')
+
+    if type == 'D'
+      # Double comparison: use dcmpg + conditional jump
+      builder.dcmpg
+      case self.class.name
+      when 'LT' then builder.iflt(true_label)
+      when 'GT' then builder.ifgt(true_label)
+      when 'LE' then builder.ifle(true_label)
+      when 'GE' then builder.ifge(true_label)
+      when 'EQ' then builder.ifeq(true_label)
+      when 'NE' then builder.ifne(true_label)
+      end
+    else
+      # Integer comparison: use if_icmpXX
+      case self.class.name
+      when 'LT' then builder.if_icmplt(true_label)
+      when 'GT' then builder.if_icmpgt(true_label)
+      when 'LE' then builder.if_icmple(true_label)
+      when 'GE' then builder.if_icmpge(true_label)
+      when 'EQ' then builder.if_icmpeq(true_label)
+      when 'NE' then builder.if_icmpne(true_label)
+      end
+    end
+
+    # False branch: push 0
+    builder.label(false_label)
+    builder.push_int(0)
+    builder.goto(end_label)
+
+    # True branch: push 1
+    builder.label(true_label)
+    builder.push_int(1)
+
+    # End
+    builder.label(end_label)
+
+    temp = "cmp_result"
+    stack.push(temp)
+    type_map[temp] = 'I'
   end
 end
 
@@ -549,9 +649,40 @@ class NEG < UNARY_INSTRUCTION
       LLVM.new "#{target_reg} = sub i32 0, #{operand_reg}"
     end
   end
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    require_relative 'lib/jvm_type_mapper'
+    operand = stack.pop
+    type = type_map[operand] || 'I'
+
+    if type == 'D'
+      builder.dneg
+    else
+      builder.ineg
+    end
+
+    temp = "neg_result"
+    stack.push(temp)
+    type_map[temp] = type
+  end
 end
 class NOT < UNARY_INSTRUCTION
   self.llvm_code = 'icmp eq'
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    # NOT: flip 0<->1 for boolean
+    # If value is 0, result is 1; if value is 1 (or non-zero), result is 0
+    operand = stack.pop
+
+    # Push 1, swap, subtract: 1 - value
+    builder.push_int(1)
+    builder.swap
+    builder.isub
+
+    temp = "not_result"
+    stack.push(temp)
+    type_map[temp] = 'I'
+  end
 end
 
 class MEMORY_INSTRUCTION < INSTRUCTION
@@ -576,11 +707,41 @@ end
 class LOAD_GLOBAL < LOAD_INSTRUCTION
   children :name
   self.llvm_memory_sig = '@'
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    require_relative 'lib/jvm_type_mapper'
+    jvm_type = JVMTypeMapper.to_jvm(type)
+    class_name = context[:class_name] || 'WalrusProgram'
+    builder.getstatic(class_name, name, jvm_type)
+
+    temp = "global_#{name}"
+    stack.push(temp)
+    type_map[temp] = jvm_type
+  end
 end
 
 class LOAD_LOCAL < LOAD_INSTRUCTION
   children :name
   self.llvm_memory_sig = '%'
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    require_relative 'lib/jvm_type_mapper'
+    local_var_map = context[:local_var_maps][context[:current_function]] || {}
+    var_index = local_var_map[name]
+    raise "Unknown local variable: #{name}" unless var_index
+
+    jvm_type = JVMTypeMapper.to_jvm(type)
+
+    case jvm_type
+    when 'I', 'Z' then builder.iload(var_index)
+    when 'D' then builder.dload(var_index)
+    when /^L/ then builder.aload(var_index)
+    end
+
+    temp = "local_#{name}"
+    stack.push(temp)
+    type_map[temp] = jvm_type
+  end
 end
 
 class STORE_INSTRUCTION < MEMORY_INSTRUCTION
@@ -594,11 +755,35 @@ end
 class STORE_GLOBAL < STORE_INSTRUCTION
   children :name
   self.llvm_memory_sig = '@'
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    require_relative 'lib/jvm_type_mapper'
+    value = stack.pop
+    jvm_type = type_map[value] || 'I'
+    class_name = context[:class_name] || 'WalrusProgram'
+    builder.putstatic(class_name, name, jvm_type)
+  end
 end
 
 class STORE_LOCAL < STORE_INSTRUCTION
   children :name
   self.llvm_memory_sig = '%'
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    require_relative 'lib/jvm_type_mapper'
+    value = stack.pop
+    local_var_map = context[:local_var_maps][context[:current_function]] || {}
+    var_index = local_var_map[name]
+    raise "Unknown local variable: #{name}" unless var_index
+
+    jvm_type = type_map[value] || 'I'
+
+    case jvm_type
+    when 'I', 'Z' then builder.istore(var_index)
+    when 'D' then builder.dstore(var_index)
+    when /^L/ then builder.astore(var_index)
+    end
+  end
 end
 
 # Function call instruction
@@ -625,6 +810,26 @@ class CALL < INSTRUCTION
 
     LLVM.new "#{target_reg} = call #{llvm_return_type} #{sig} @#{name}(#{args_str})"
   end
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    require_relative 'lib/jvm_type_mapper'
+    # Args are already on stack in correct order
+    # Note: param_types should be set during type inference
+    arg_types = (param_types || []).map { |t| JVMTypeMapper.to_jvm(t) }
+    ret_type = JVMTypeMapper.to_jvm(type)
+
+    descriptor = "(#{arg_types.join})#{ret_type}"
+    class_name = context[:class_name] || 'WalrusProgram'
+
+    # Pop args to track types (they're already on JVM stack)
+    nargs.times { stack.pop }
+
+    builder.invokestatic(class_name, name, descriptor)
+
+    temp = "call_#{name}"
+    stack.push(temp)
+    type_map[temp] = ret_type
+  end
 end
 
 class PRINT < INSTRUCTION
@@ -643,6 +848,29 @@ class PRINT < INSTRUCTION
       LLVM.new "call i32 (i32) @_print_int(i32 #{value})"
     end
   end
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    value = stack.pop
+    jvm_type = type_map[value] || 'I'
+
+    # Get System.out
+    builder.getstatic('java/lang/System', 'out', 'Ljava/io/PrintStream;')
+    builder.swap  # Swap to get value on top
+
+    # Call appropriate println method
+    case jvm_type
+    when 'I'
+      builder.invokevirtual('java/io/PrintStream', 'println', '(I)V')
+    when 'D'
+      builder.invokevirtual('java/io/PrintStream', 'println', '(D)V')
+    when 'Z'
+      builder.invokevirtual('java/io/PrintStream', 'println', '(Z)V')
+    when 'C'
+      builder.invokevirtual('java/io/PrintStream', 'println', '(C)V')
+    when 'Ljava/lang/String;'
+      builder.invokevirtual('java/io/PrintStream', 'println', '(Ljava/lang/String;)V')
+    end
+  end
 end
 
 class GETS < INSTRUCTION
@@ -651,6 +879,15 @@ class GETS < INSTRUCTION
     type_map[target_reg] = 'i32'
     stack.push target_reg
     LLVM.new "#{target_reg} = call i32 () @_gets_int()"
+  end
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    # TODO: Implement input reading for JVM
+    # For now, push a dummy value
+    builder.push_int(0)
+    temp = "gets_result"
+    stack.push(temp)
+    type_map[temp] = 'I'
   end
 end
 
@@ -661,6 +898,19 @@ class RETURN < INSTRUCTION
     llvm_type = type_map[value] || 'i32'
     LLVM.new("ret #{llvm_type} #{value}")
   end
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    raise "stack during RETURN shouldn't be empty" if stack.empty?
+    value = stack.pop
+    jvm_type = type_map[value] || 'I'
+
+    case jvm_type
+    when 'I', 'Z' then builder.ireturn
+    when 'D' then builder.dreturn
+    when /^L/ then builder.areturn
+    else builder.voidreturn
+    end
+  end
 end
 
 class LOCAL < INSTRUCTION
@@ -670,6 +920,13 @@ class LOCAL < INSTRUCTION
     llvm_type = TypeMapper.to_llvm(self.type)
     LLVM.new("%#{name} = alloca #{llvm_type}")
   end
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    # JVM doesn't need explicit allocation for locals
+    # They're automatically allocated in local variable table
+    # This is a no-op for JVM
+    nil
+  end
 end
 
 # Control flow instructions (Walrus 11)
@@ -678,6 +935,10 @@ class GOTO < INSTRUCTION
   def get_llvm_code stack, type_map
     LLVM.new "br label %#{label}"
   end
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    builder.goto(label)
+  end
 end
 
 class CBRANCH < INSTRUCTION
@@ -685,6 +946,13 @@ class CBRANCH < INSTRUCTION
   def get_llvm_code stack, type_map
     condition = stack.pop
     LLVM.new "br i1 #{condition}, label %#{true_label}, label %#{false_label}"
+  end
+
+  def get_jvm_bytecode(builder, stack, type_map, context)
+    condition = stack.pop
+    # Condition is 0 (false) or 1 (true)
+    builder.ifne(true_label)  # if != 0, jump to true
+    builder.goto(false_label)
   end
 end
 
